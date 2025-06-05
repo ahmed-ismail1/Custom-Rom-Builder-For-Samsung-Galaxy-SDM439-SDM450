@@ -1,20 +1,23 @@
 name: Custom Rom Builder Samsung Galaxy A11/M11
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       GSI:
-        description: 'GSI Image URL (.img.xz, .img.gz, or raw .img)'
+        description: 'Direct link for GSI image'
         required: true
-        default: 'https://github.com/phhusson/treble_experimentations/releases/download/v407/SystemRw_arm64-ab-vanilla.img.xz'
+        default: 'https://sourceforge.net/projects/andyyan-gsi/files/lineage-19.x/lineage-19.1-20230715-UNOFFICIAL-a64_bgN.img.xz'
       ARCH:
-        description: '64 (ARM64) or 32 (ARM32)'
+        description: 'ARM64 or ARM32?'
         required: true
-        default: '64'
-      ROM_NAME:
-        description: 'اسم الروم النهائي (بدون مسافات)'
+        default: '32'
+      NAME:
+        description: 'Rom Name'
         required: true
-        default: 'LineageOS_19.1_A11_ARM64'
+        default: 'LineageOS_19.1_A11_M11_ARM32_Gapps'
 
 jobs:
   Build:
@@ -22,110 +25,34 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Install Dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y zip xz-utils unzip p7zip-full wget git file gzip
+        sudo apt-get update -y
+        sudo apt-get install -y zip xz-utils unzip p7zip-full wget git
 
-    - name: Clone ROM Builder
+    - name: Preparing Files
       run: |
-        git clone --depth=1 --recurse-submodules https://github.com/smiley9000/Custom-Rom-Builder-For-Samsung-Galaxy-A11-M11
-        cd Custom-Rom-Builder-For-Samsung-Galaxy-A11-M11
-        git submodule update --init --recursive
+        wget https://sourceforge.net/projects/samsung-galaxy-a01-m01/files/a11q.zip
+        git clone https://github.com/ahmed-ismail1/Custom-Rom-Builder-For-Samsung-Galaxy-A11-M11
+        unzip a11q.zip
+        rm -f a11q.zip
 
-    - name: Download a11q Tools
+    - name: Downloading your GSI
       run: |
-        wget -O a11q.zip "https://sourceforge.net/projects/a11q/files/a11q.zip"
-        mkdir -p Custom-Rom-Builder-For-Samsung-Galaxy-A11-M11/a11q
-        unzip a11q.zip -d Custom-Rom-Builder-For-Samsung-Galaxy-A11-M11/a11q
-        rm a11q.zip
+        mkdir -p ./temp
+        wget -O "./temp/gsi_image.img.xz" "${{ github.event.inputs.GSI}}"
+        chmod -R 755 ./*
 
-    - name: Prepare Workspace
+    - name: Building
       run: |
-        cd Custom-Rom-Builder-For-Samsung-Galaxy-A11-M11/a11q
-        mkdir -p super/arm${{ github.event.inputs.ARCH }}
-        chmod +x *.sh || true
-        chmod +x bin/* || true
-
-    - name: Download and Process GSI
-      run: |
-        cd Custom-Rom-Builder-For-Samsung-Galaxy-A11-M11/a11q
-        mkdir -p temp
-        echo "📥 Downloading GSI from: ${{ github.event.inputs.GSI }}"
-        wget -q --show-progress -O temp/gsi_image "${{ github.event.inputs.GSI }}"
-
-        # Detect file type
-        file_type=$(file -b temp/gsi_image | awk '{print $1}')
-        echo "🧠 Detected file type: $file_type"
-
-        # Handle file types
-        case $file_type in
-          "XZ")
-            echo "🛠️ Processing XZ compressed file"
-            mv temp/gsi_image temp/gsi.img.xz
-            xz -d -c temp/gsi.img.xz > super/arm${{ github.event.inputs.ARCH }}/super.img
-            ;;
-          "gzip")
-            echo "🛠️ Processing GZIP compressed file"
-            mv temp/gsi_image temp/gsi.img.gz
-            gunzip -c temp/gsi.img.gz > super/arm${{ github.event.inputs.ARCH }}/super.img
-            ;;
-          "Android")
-            echo "🛠️ Processing raw Android image"
-            mv temp/gsi_image super/arm${{ github.event.inputs.ARCH }}/super.img
-            ;;
-          *)
-            echo "❌ Unsupported file type: $file_type"
-            file temp/gsi_image
-            exit 1
-            ;;
-        esac
-
-        # Verify and compress
-        cd super/arm${{ github.event.inputs.ARCH }}
-        if [ ! -s super.img ]; then
-          echo "❌ Error: Resulting image is empty!"
-          exit 1
-        fi
-        echo "📦 Compressing super.img..."
-        xz -z -T0 -9 super.img
-        ls -lh
-
-    - name: Verify GSI Preparation
-      run: |
-        cd Custom-Rom-Builder-For-Samsung-Galaxy-A11-M11/a11q/super/arm${{ github.event.inputs.ARCH }}
-        if [ ! -f super.img.xz ]; then
-          echo "❌ Error: super.img.xz not found!"
-          exit 1
-        fi
-        echo "✅ GSI ready. Size: $(du -sh super.img.xz)"
-
-    - name: Build ROM
-      run: |
-        cd Custom-Rom-Builder-For-Samsung-Galaxy-A11-M11/a11q
-        echo "🏗️ Starting build process..."
-        ./arm${{ github.event.inputs.ARCH }}_git || {
-          echo "❌ Build failed! Showing logs:";
-          cat logs/*.log 2>/dev/null || echo "No logs available";
-          exit 1;
-        }
-
-    - name: Rename Output File
-      run: |
-        cd Custom-Rom-Builder-For-Samsung-Galaxy-A11-M11/a11q/zip
-        if [ -f "Custom_Rom_SDM450.zip" ]; then
-          mv "Custom_Rom_SDM450.zip" "${{ github.event.inputs.ROM_NAME }}.zip"
-          echo "✅ Renamed to: ${{ github.event.inputs.ROM_NAME }}.zip"
-        else
-          echo "❌ Original zip file not found!"
-          ls -la
-          exit 1
-        fi
+        chmod +x ./arm${{ github.event.inputs.ARCH }}_git
+        ./arm${{ github.event.inputs.ARCH }}_git
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ github.event.inputs.ROM_NAME }}
-        path: Custom-Rom-Builder-For-Samsung-Galaxy-A11-M11/a11q/zip/${{ github.event.inputs.ROM_NAME }}.zip
+        name: ${{ github.event.inputs.NAME }}
+        path: ./zip/Custom_Rom_SDM450.zip
+        retention-days: 5
