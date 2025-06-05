@@ -10,7 +10,7 @@ on:
         required: true
         default: 'https://sourceforge.net/projects/andyyan-gsi/files/lineage-19.x/lineage-19.1-20230715-UNOFFICIAL-a64_bgN.img.xz'
       ARCH:
-        description: 'ARM64 (64) or ARM32 (32)?'
+        description: 'ARM64 (aarch64) or ARM32 (arm)?'
         required: true
         default: '32'
       NAME:
@@ -19,50 +19,61 @@ on:
         default: 'LineageOS_19.1_A11_M11_ARM32_Gapps'
 
 jobs:
-  Build:
+  build-rom:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     steps:
-    - name: Checkout Repository
+    - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install Dependencies
+    - name: Set up environment
       run: |
         sudo apt-get update -y
-        sudo apt-get install -y zip xz-utils unzip p7zip-full wget git
+        sudo apt-get install -y \
+          zip \
+          xz-utils \
+          unzip \
+          p7zip-full \
+          wget \
+          git \
+          curl
 
-    - name: Prepare Workspace
+    - name: Prepare workspace
       run: |
         mkdir -p ./temp ./zip
-        wget -q --show-progress https://sourceforge.net/projects/a11q/files/a11q.zip
+        wget --progress=dot:giga https://sourceforge.net/projects/samsung-galaxy-a01-m01/files/a11q.zip -O a11q.zip
         unzip -q a11q.zip -d .
         rm -f a11q.zip
 
-    - name: Download GSI Image
+    - name: Download GSI image
       run: |
-        wget -q --show-progress "${{ github.event.inputs.GSI }}" -O ./temp/gsi_image.img.xz
+        wget --progress=dot:giga "${{ github.event.inputs.GSI }}" -O ./temp/gsi_image.img.xz
 
-    - name: Set Execute Permissions
+    - name: Set permissions
       run: |
         chmod +x ./arm${{ github.event.inputs.ARCH }}_git
-        chmod +x ./bin/*
+        find ./bin/ -type f -exec chmod +x {} \;
 
     - name: Build ROM
       run: |
         ./arm${{ github.event.inputs.ARCH }}_git
 
-    - name: Verify Output File
+    - name: Verify output
       run: |
         if [ ! -f "./zip/Custom_Rom_SDM450.zip" ]; then
-          echo "::error::Output file not found!"
+          echo "::error::Build failed - Output file not found!"
+          echo "Contents of zip directory:"
           ls -la ./zip/
           exit 1
         fi
+        echo "Build completed successfully!"
+        ls -lh ./zip/Custom_Rom_SDM450.zip
 
-    - name: Upload Artifact
+    - name: Upload ROM artifact
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: ${{ github.event.inputs.NAME }}
         path: ./zip/Custom_Rom_SDM450.zip
-        retention-days: 3
+        retention-days: 5
